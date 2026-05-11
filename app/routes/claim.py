@@ -23,6 +23,7 @@ challenge, rate-limited) with the right HTTP status. For internal errors
 from __future__ import annotations
 
 import logging
+import secrets
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -158,13 +159,19 @@ async def claim(
             headers=headers,
         )
 
-    # 4) Create the LNbits withdraw link. The title is what the user's wallet
+    # 4) Build the LNbits-redemption webhook URL (optional, requires HTTPS
+    #    base_url so the LNbits server can reach us). The token is the path
+    #    secret: 128 bits of entropy, stored alongside the claim row.
+    webhook_url, webhook_token = _build_redemption_webhook(settings)
+
+    # 5) Create the LNbits withdraw link. The title is what the user's wallet
     #    displays when they scan the QR — surface the source site there.
     try:
         link = await lnbits.create_single_use_link(
             amount_sats=settings.claim.amount_sats,
             title=settings.claim.format_title(),
             wait_time_seconds=settings.claim.lnbits_wait_time_seconds,
+            webhook_url=webhook_url,
         )
     except LNbitsError as exc:
         log.exception("LNbits link creation failed for ip=%s", ip)
@@ -173,9 +180,14 @@ async def claim(
             detail="Lightning backend unavailable. Please try again shortly.",
         ) from exc
 
-    # 5) Record the claim — only after LNbits succeeded.
+    # 6) Record the claim — only after LNbits succeeded.
     try:
-        await ratelimiter.record(ip=ip, link_id=link.id, amount_sats=link.amount_sats)
+        await ratelimiter.record(
+            ip=ip,
+            link_id=link.id,
+            amount_sats=link.amount_sats,
+            webhook_token=webhook_token,
+        )
     except Exception:
         # Don't punish the user if our local bookkeeping fails — the link is
         # already minted and they have a right to claim. Log and move on.
@@ -199,3 +211,20 @@ def _ratelimit_message(reason: str | None) -> str:
     if reason == "ip_cooldown":
         return "You already claimed recently. Please try again later."
     return "Too many requests."
+
+
+def _build_redemption_webhook(settings) -> tuple[str | None, str | None]:
+    """Return `(webhook_url, webhook_token)` to pass to LNbits, or `(None, None)`.
+
+    A webhook URL is only meaningful if LNbits can reach us back, which
+    requires `app.base_url` to be public (https) **and** the receiver route
+    to be mounted. For local-only dev (http://localhost), we skip silently:
+    redemptions then won't be tracked but everything else works.
+    """
+    base_url = str(settings.app.base_url).rstrip("/")
+    # LNbits won't reach plain `localhost` from its own host. We could allow
+    # an explicit override, but the safer default is to skip for non-https.
+    if not base_url.startswith("https://"):
+        return None, None
+    token = secrets.token_hex(16)
+    return f"{base_url}/api/webhook/lnbits/{token}", token

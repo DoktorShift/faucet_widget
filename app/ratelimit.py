@@ -27,21 +27,24 @@ import aiosqlite
 log = logging.getLogger(__name__)
 
 
-_SCHEMA = """
+# Schema bootstrap is split into three stages so we can layer forward
+# migrations cleanly on top of existing databases:
+#   1. _BASE_SCHEMA — tables only (no indexes on columns added later)
+#   2. _add_column_if_missing — ALTER TABLE for new columns (idempotent)
+#   3. _POST_MIGRATE_INDEXES — indexes that may reference newly-added cols
+_BASE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS claims (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    ip           TEXT    NOT NULL,
-    created_at   INTEGER NOT NULL,   -- unix seconds
-    day_utc      TEXT    NOT NULL,   -- YYYY-MM-DD in UTC
-    link_id      TEXT,
-    amount_sats  INTEGER NOT NULL
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip              TEXT    NOT NULL,
+    created_at      INTEGER NOT NULL,   -- unix seconds (mint time)
+    day_utc         TEXT    NOT NULL,   -- YYYY-MM-DD in UTC
+    link_id         TEXT,
+    amount_sats     INTEGER NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_claims_ip_created   ON claims (ip, created_at);
-CREATE INDEX IF NOT EXISTS idx_claims_day          ON claims (day_utc);
+CREATE INDEX IF NOT EXISTS idx_claims_ip_created ON claims (ip, created_at);
+CREATE INDEX IF NOT EXISTS idx_claims_day        ON claims (day_utc);
 
--- Used PoW nonces — UNIQUE so a second insert raises IntegrityError. We use
--- this to reject replay of an already-solved challenge.
 CREATE TABLE IF NOT EXISTS used_nonces (
     nonce      TEXT    PRIMARY KEY,
     expires_at INTEGER NOT NULL
@@ -49,8 +52,6 @@ CREATE TABLE IF NOT EXISTS used_nonces (
 
 CREATE INDEX IF NOT EXISTS idx_nonces_exp ON used_nonces (expires_at);
 
--- Per-IP request log used for endpoint-level throttling (challenge spam).
--- Kept short — only the last few minutes matter.
 CREATE TABLE IF NOT EXISTS challenge_hits (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     ip         TEXT    NOT NULL,
@@ -60,6 +61,25 @@ CREATE TABLE IF NOT EXISTS challenge_hits (
 CREATE INDEX IF NOT EXISTS idx_chits_ip_created ON challenge_hits (ip, created_at);
 """
 
+_POST_MIGRATE_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_claims_redeemed ON claims (redeemed_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_claims_webhook_token
+    ON claims (webhook_token) WHERE webhook_token IS NOT NULL;
+"""
+
+
+async def _add_column_if_missing(db: "aiosqlite.Connection", table: str, column_def: str) -> None:
+    """Idempotent ALTER TABLE ADD COLUMN for forward migrations.
+
+    SQLite has no `IF NOT EXISTS` for ADD COLUMN, so we peek at PRAGMA
+    table_info first. Cheap and safe to run on every boot.
+    """
+    column_name = column_def.split()[0]
+    async with db.execute(f"PRAGMA table_info({table})") as cur:
+        cols = {row[1] async for row in cur}
+    if column_name not in cols:
+        await db.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+
 
 @dataclass(slots=True, frozen=True)
 class RateLimitVerdict:
@@ -68,6 +88,16 @@ class RateLimitVerdict:
     allowed: bool
     reason: str | None = None
     retry_after_seconds: int | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class RedeemedClaim:
+    """Returned from `mark_redeemed` so callers can fan out webhooks."""
+
+    link_id: str
+    amount_sats: int
+    minted_at: int      # unix seconds
+    redeemed_at: int    # unix seconds
 
 
 class RateLimiter:
@@ -80,7 +110,13 @@ class RateLimiter:
     async def init(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         async with self._conn() as db:
-            await db.executescript(_SCHEMA)
+            # Stage 1: base tables + indexes that exist on day-one columns
+            await db.executescript(_BASE_SCHEMA)
+            # Stage 2: forward migrations (no-op on fresh DBs)
+            await _add_column_if_missing(db, "claims", "webhook_token TEXT")
+            await _add_column_if_missing(db, "claims", "redeemed_at INTEGER")
+            # Stage 3: indexes that reference columns from stage 2
+            await db.executescript(_POST_MIGRATE_INDEXES)
             await db.execute("PRAGMA journal_mode=WAL")
             await db.commit()
         self._initialised = True
@@ -132,15 +168,63 @@ class RateLimiter:
         ip: str,
         link_id: str,
         amount_sats: int,
+        webhook_token: str | None = None,
     ) -> None:
-        """Persist a successful claim. Call only AFTER LNbits link creation succeeded."""
+        """Persist a successful claim. Call only AFTER LNbits link creation succeeded.
+
+        Pass `webhook_token` if a webhook URL containing that token was given
+        to LNbits at link-creation time. The token is the secret that maps an
+        incoming LNbits callback back to the originating claim.
+        """
         async with self._conn() as db:
             await db.execute(
-                "INSERT INTO claims (ip, created_at, day_utc, link_id, amount_sats) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (ip, _now(), _today_utc(), link_id, amount_sats),
+                "INSERT INTO claims (ip, created_at, day_utc, link_id, amount_sats, webhook_token) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (ip, _now(), _today_utc(), link_id, amount_sats, webhook_token),
             )
             await db.commit()
+
+    # ── redemption tracking (called from /api/webhook/lnbits) ─────────────
+
+    async def mark_redeemed(self, *, webhook_token: str, link_id: str) -> "RedeemedClaim | None":
+        """Mark a claim as redeemed (sats actually withdrawn by user).
+
+        Returns the matching claim record on success (so the caller can fan
+        out forwarding webhooks), or None if:
+          - the token doesn't match any claim (spoofed callback), OR
+          - the body-claimed link_id doesn't match what we stored, OR
+          - the claim was already redeemed (idempotent: double-fire is no-op).
+        """
+        now = _now()
+        async with self._conn() as db:
+            async with db.execute(
+                "SELECT id, link_id, amount_sats, created_at, redeemed_at "
+                "FROM claims WHERE webhook_token = ?",
+                (webhook_token,),
+            ) as cur:
+                row = await cur.fetchone()
+            if row is None:
+                return None
+            claim_id, stored_link_id, amount, created_at, already_redeemed = row
+            if stored_link_id != link_id:
+                log.warning(
+                    "webhook link_id mismatch token=%s stored=%s claimed=%s",
+                    webhook_token, stored_link_id, link_id,
+                )
+                return None
+            if already_redeemed is not None:
+                return None   # idempotent: webhook already processed
+            await db.execute(
+                "UPDATE claims SET redeemed_at = ? WHERE id = ?",
+                (now, claim_id),
+            )
+            await db.commit()
+        return RedeemedClaim(
+            link_id=stored_link_id,
+            amount_sats=int(amount),
+            minted_at=int(created_at),
+            redeemed_at=now,
+        )
 
     # ── PoW nonce single-use tracking ─────────────────────────────────────
 
@@ -214,21 +298,51 @@ class RateLimiter:
 
     # ── stats (used by /api/health) ────────────────────────────────────────
 
-    async def stats(self) -> dict[str, int]:
+    async def stats(self) -> dict[str, int | None]:
+        """Aggregate counters used by /api/health.
+
+        We report both **minted** counts (links we created) and **redeemed**
+        counts (links the user actually claimed). The gap is the no-show rate.
+        """
+        today = _today_utc()
         async with self._conn() as db:
             row = await (await db.execute(
                 "SELECT COUNT(*), COALESCE(SUM(amount_sats), 0) "
                 "FROM claims WHERE day_utc = ?",
-                (_today_utc(),),
+                (today,),
             )).fetchone()
-            today_count, today_sats = (row or (0, 0))
-            row = await (await db.execute("SELECT COUNT(*), COALESCE(SUM(amount_sats), 0) FROM claims")).fetchone()
-            total_count, total_sats = (row or (0, 0))
+            today_minted_count, today_minted_sats = (row or (0, 0))
+
+            row = await (await db.execute(
+                "SELECT COUNT(*), COALESCE(SUM(amount_sats), 0) "
+                "FROM claims WHERE day_utc = ? AND redeemed_at IS NOT NULL",
+                (today,),
+            )).fetchone()
+            today_redeemed_count, today_redeemed_sats = (row or (0, 0))
+
+            row = await (await db.execute(
+                "SELECT COUNT(*), COALESCE(SUM(amount_sats), 0) FROM claims"
+            )).fetchone()
+            total_minted_count, total_minted_sats = (row or (0, 0))
+
+            row = await (await db.execute(
+                "SELECT COUNT(*), COALESCE(SUM(amount_sats), 0), MAX(redeemed_at) "
+                "FROM claims WHERE redeemed_at IS NOT NULL"
+            )).fetchone()
+            total_redeemed_count, total_redeemed_sats, last_redemption_at = (
+                row or (0, 0, None)
+            )
+
         return {
-            "today_count": int(today_count),
-            "today_sats": int(today_sats),
-            "total_count": int(total_count),
-            "total_sats": int(total_sats),
+            "today_count": int(today_minted_count),     # mint-side, kept name for back-compat
+            "today_sats": int(today_minted_sats),
+            "today_redeemed_count": int(today_redeemed_count),
+            "today_redeemed_sats": int(today_redeemed_sats),
+            "total_count": int(total_minted_count),
+            "total_sats": int(total_minted_sats),
+            "total_redeemed_count": int(total_redeemed_count),
+            "total_redeemed_sats": int(total_redeemed_sats),
+            "last_redemption_at": int(last_redemption_at) if last_redemption_at else None,
             "daily_cap": self._daily_cap,
         }
 

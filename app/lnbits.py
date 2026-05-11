@@ -93,6 +93,7 @@ class LNbitsClient:
         amount_sats: int,
         title: str,
         wait_time_seconds: int = 1,
+        webhook_url: str | None = None,
     ) -> WithdrawLink:
         """Create a one-shot LNURL-withdraw link.
 
@@ -111,7 +112,7 @@ class LNbitsClient:
         if self._mock:
             return self._mock_link(amount_sats)
 
-        payload = {
+        payload: dict[str, Any] = {
             "title": title,
             "min_withdrawable": amount_sats,   # Withdraw extension API is in SATS
             "max_withdrawable": amount_sats,
@@ -119,6 +120,10 @@ class LNbitsClient:
             "wait_time": max(wait_time_seconds, 1),
             "is_unique": False,
         }
+        if webhook_url:
+            # When configured, LNbits POSTs to this URL after the user's
+            # wallet successfully redeems the link. See routes/webhook.py.
+            payload["webhook_url"] = webhook_url
         return await self._post_link(payload, amount_sats)
 
     async def delete_link(self, link_id: str) -> None:

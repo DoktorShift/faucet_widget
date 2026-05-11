@@ -27,12 +27,14 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app import __version__
+from app.alerts import AlertMonitor
 from app.config import Settings, get_settings
 from app.lnbits import LNbitsClient
 from app.pow import Antibot
 from app.ratelimit import RateLimiter
 from app.routes import claim as claim_routes
 from app.routes import meta as meta_routes
+from app.routes import webhook as webhook_routes
 
 # ── logging ────────────────────────────────────────────────────────────────
 
@@ -77,15 +79,25 @@ async def lifespan(app: FastAPI):
     )
     await ratelimiter.init()
 
+    alert_monitor = AlertMonitor(
+        settings=settings,
+        lnbits=lnbits,
+        ratelimiter=ratelimiter,
+    )
+
     app.state.settings = settings
     app.state.lnbits = lnbits
     app.state.antibot = antibot
     app.state.ratelimiter = ratelimiter
+    app.state.alert_monitor = alert_monitor
+
+    await alert_monitor.start()
 
     try:
         yield
     finally:
         log.info("value4value shutting down")
+        await alert_monitor.stop()
         await lnbits.aclose()
 
 
@@ -162,6 +174,7 @@ app.add_middleware(
 # API routes
 app.include_router(claim_routes.router)
 app.include_router(meta_routes.router)
+app.include_router(webhook_routes.router)
 
 
 # ── static / SPA ───────────────────────────────────────────────────────────

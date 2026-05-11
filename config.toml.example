@@ -116,3 +116,51 @@ name = "Alby"
 tagline = "Fast & Simple Lighting Wallet with NWC"
 logo = "alby.png"
 url = "https://getalby.com/alby-go"
+
+
+# ────────────────────────────────────────────────────────────────────
+# OPTIONAL: outbound webhooks (skip entirely if not needed)
+# ────────────────────────────────────────────────────────────────────
+
+[webhooks]
+# Fire on the event "claim_redeemed", i.e. when the user's wallet has actually
+# pulled the sats (not just minted the link). Slack/Discord incoming-webhook
+# URLs work out of the box; arbitrary URLs receive a structured JSON payload.
+# Leave empty to disable. The receiver endpoint still tracks redemptions for
+# /api/health stats whether or not you forward.
+#
+# Requires `app.base_url` to be HTTPS so LNbits can reach you back.
+#
+# Example payload sent to each URL:
+#   {
+#     "text": "⚡ faucet redeemed: 21 sats claimed (link `abc...`, 12s after mint)",
+#     "event": "claim_redeemed",
+#     "data": { "link_id":"...", "amount_sats":21,
+#               "minted_at":<unix>, "redeemed_at":<unix>,
+#               "time_to_redeem_seconds":12 }
+#   }
+on_claim_redeemed = []
+# Slow webhook = sluggish redemption webhook from LNbits. 10s is generous.
+timeout_seconds = 10
+
+
+# ────────────────────────────────────────────────────────────────────
+# OPTIONAL: push-alerts on health-state changes (skip if not needed)
+# ────────────────────────────────────────────────────────────────────
+
+[alerts]
+# Compatible with Slack/Discord incoming webhooks. Fires only on state
+# transitions:
+#   healthy   ↔ degraded   (LNbits up/down)
+#   healthy   ↔ low_pot    (crossed the threshold)
+#   low_pot   ↔ pot_empty
+#   pot_empty ↔ healthy    (new UTC day reset)
+#
+# Empty list = no push alerts (use pull-based monitoring on /api/health).
+on_health_change = []
+# How often to snapshot state (seconds)
+poll_interval_seconds = 60
+# Trigger "low_pot" state when daily_cap remaining drops below this percentage
+low_pot_threshold_pct = 20
+# Per-webhook timeout
+timeout_seconds = 10

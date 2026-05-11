@@ -103,12 +103,42 @@ class WalletsSection(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class WebhooksSection(BaseModel):
+    """Optional outbound webhooks fired when a faucet claim is **redeemed**.
+
+    Each URL receives a POST with a small JSON payload (link_id, amount_sats,
+    minted_at, redeemed_at). Compatible with Slack/Discord incoming webhooks
+    out of the box. Disabled when the list is empty.
+    """
+
+    on_claim_redeemed: list[HttpUrl] = Field(default_factory=list)
+    timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 10
+
+
+class AlertsSection(BaseModel):
+    """Optional push-alerts on health-state changes.
+
+    A background task snapshots the service health every `poll_interval_seconds`
+    and POSTs to each `on_health_change` URL when the state transitions
+    (e.g. LNbits reachable → unreachable, pot below threshold, daily cap hit).
+    Disabled when the list is empty (use pull-monitoring via /api/health).
+    """
+
+    on_health_change: list[HttpUrl] = Field(default_factory=list)
+    poll_interval_seconds: Annotated[int, Field(ge=10, le=3600)] = 60
+    low_pot_threshold_pct: Annotated[int, Field(ge=1, le=99)] = 20
+    timeout_seconds: Annotated[int, Field(ge=1, le=60)] = 10
+
+
 class Settings(BaseModel):
     app: AppSection
     lnbits: LNbitsSection
     claim: ClaimSection
     antibot: AntibotSection
     wallets: WalletsSection
+    # Both opt-in. Empty defaults so existing configs keep working.
+    webhooks: WebhooksSection = Field(default_factory=WebhooksSection)
+    alerts: AlertsSection = Field(default_factory=AlertsSection)
 
     @field_validator("lnbits")
     @classmethod
@@ -155,6 +185,7 @@ def get_settings() -> Settings:
 
 
 __all__ = [
+    "AlertsSection",
     "AntibotSection",
     "AppSection",
     "ClaimSection",
@@ -162,5 +193,6 @@ __all__ = [
     "Settings",
     "WalletEntry",
     "WalletsSection",
+    "WebhooksSection",
     "get_settings",
 ]

@@ -101,14 +101,96 @@ the volume mount keeps the database between container restarts.
 ./scripts/reset-claims.sh --soft      # only IP cooldowns and nonces
 ```
 
-## 7. Health check
+## 7. Monitoring
 
-```sh
-curl https://value4value.eu/api/health
+`/api/health` is the single contract. Two patterns, pick one or both.
+
+### 7a. Pull-based monitoring (recommended baseline)
+
+Point UptimeRobot, Healthchecks.io, k8s readiness probe, or anything else at:
+
+```
+GET https://value4value.eu/api/health
 ```
 
-Returns `{ok, lnbits_reachable, today_count, today_sats, daily_cap}`. The
-container's `HEALTHCHECK` polls this every 30 s.
+HTTP semantics:
+
+| Code | Meaning |
+| :--- | :--- |
+| `200` | Service healthy. `low_pot` and `pot_empty` also return 200 because they are operational signals, not outages. |
+| `503` | LNbits unreachable. Page someone. |
+
+Response body (stable contract, fields may be added but not removed):
+
+```json
+{
+  "status": "healthy",
+  "ok": true,
+  "lnbits_reachable": true,
+
+  "daily_cap": 50,
+  "today_count": 12,
+  "today_sats": 252,
+  "remaining_today": 38,
+  "low_pot_warning": false,
+
+  "total_minted_count": 145,
+  "total_redeemed_count": 122,
+  "redemption_rate": 0.84,
+  "last_redemption_at": 1778460823
+}
+```
+
+`status` is one of `healthy`, `low_pot`, `pot_empty`, `degraded`.
+The container's `HEALTHCHECK` polls this every 30 s already.
+
+### 7b. Push-based alerts (optional)
+
+When you want to get notified the moment things change without setting up a
+third-party monitor:
+
+```toml
+[alerts]
+on_health_change      = ["https://hooks.slack.com/services/T0.../B0.../..."]
+poll_interval_seconds = 60
+low_pot_threshold_pct = 20
+```
+
+A background task snapshots state every `poll_interval_seconds` and POSTs to
+each URL **only on transitions** (healthy ↔ degraded ↔ low_pot ↔ pot_empty).
+Steady state is silent. Discord webhooks accept the Slack format.
+
+The payload is dual-purpose:
+
+```json
+{
+  "text": ":warning: faucet low pot: less than 10/50 claims left today",
+  "event": "health_change",
+  "data": {
+    "from": "healthy", "to": "low_pot",
+    "lnbits_reachable": true,
+    "today_count": 40, "remaining_today": 10, "daily_cap": 50
+  }
+}
+```
+
+### 7c. Redemption-event webhooks (optional)
+
+To get notified when an actual user wallet picks up the sats (not just when
+the link is minted), point `webhooks.on_claim_redeemed` at your URL:
+
+```toml
+[webhooks]
+on_claim_redeemed = ["https://hooks.slack.com/...", "https://hooks.zapier.com/..."]
+timeout_seconds   = 10
+```
+
+Requires `app.base_url` to be HTTPS so LNbits can reach the receiver
+endpoint `POST /api/webhook/lnbits/{token}`. The token is a 128-bit random
+secret stored alongside each claim. Callbacks with unknown tokens get a
+silent `404`. The same `claim_redeemed` event also feeds the
+`total_redeemed_count` field returned by `/api/health` regardless of
+forwarding being enabled.
 
 ## 8. Updates
 
