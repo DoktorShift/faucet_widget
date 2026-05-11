@@ -1,6 +1,6 @@
 # WordPress integration
 
-Three ways to put the **"Get 21 sats"** button on your WordPress site.
+Three ways to put the **"Get X sats"** button on your WordPress site.
 Each one is fully working. Start with Option A. Fall back if your theme
 fights you.
 
@@ -139,6 +139,3 @@ Supported: `de`, `en`.
 | Membership plugins (RCP, etc.) | yes | yes | yes |
 | Strict CSP (`script-src 'self'`) | no | no | yes |
 | WordPress.com (non-Business plan) | no | n/a | yes |
-
-For Bloemelen's self-hosted setup with admin rights, Option A works
-out of the box.
