@@ -1,0 +1,118 @@
+# value4value central config file.
+# Copy to `config.toml` and adjust. Never commit `config.toml` (it has secrets).
+
+[app]
+# Public base URL of this service. Used in QR/LNURL generation.
+base_url = "https://value4value.eu"
+
+# Bind address + port for the FastAPI server.
+host = "0.0.0.0"
+port = 8000
+
+# Origins allowed to call /api/* (CORS).
+# IMPORTANT: in production, REMOVE the localhost entry. It's there for `npm run dev`.
+cors_origins = [
+    "https://21m.art",
+    "https://21mio.eu",
+    "https://value4value.eu",
+    # "http://localhost:5173",   # uncomment ONLY for local dev
+]
+
+# Default UI language: "de" or "en"
+default_lang = "de"
+
+
+[lnbits]
+# Set `mock = true` while developing without a real key. Returns fake LNURLs.
+mock = false
+
+# Your LNbits server.
+url = "https://lnbits.eu"
+
+# Wallet that funds the faucet. Find under Wallets → "API info".
+# `admin_key` is required because creating Withdraw links needs admin scope.
+#
+# SECURITY: create a DEDICATED wallet for this faucet and fund it with only
+# the daily/weekly budget you can afford to lose. The admin key has full
+# rights over the wallet's funds. Don't reuse a personal wallet's admin key.
+wallet_id = "REPLACE_ME"
+admin_key = "REPLACE_ME"
+
+
+[claim]
+# Sats awarded per successful claim. Same value used for min and max so the
+# link has a fixed amount and the user cannot tamper with it.
+amount_sats = 21
+
+# Global daily cap. Once reached, claims are refused until midnight UTC.
+daily_cap = 100
+
+# Per-IP cooldown in hours. 24 = one claim per IP per day.
+ip_cooldown_hours = 24
+
+# How long the generated LNURL stays valid (seconds). Default 1h.
+link_expiry_seconds = 3600
+
+# Wait time enforced by LNbits between successive scans.
+# Kept low because we issue single-use links (uses=1) anyway.
+lnbits_wait_time_seconds = 1
+
+# What the user's Lightning wallet displays when they scan the QR. This is
+# the only place we can surface the source site to the user's wallet. The
+# LNURL endpoint itself has to live on the LNbits server.
+# Placeholders: {amount} = sats count.
+link_title = "21m.art · {amount} sats gift"
+
+
+[antibot]
+# HMAC secret used to sign PoW challenges. Set to a random 32+ byte string.
+# Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
+hmac_secret = "REPLACE_ME_WITH_32_BYTE_HEX"
+
+# Difficulty: number of leading zero bits the PoW solution must have.
+# 16 = ~65k hashes per solve (~200ms on a phone). 20 = ~1s. Tune for UX.
+pow_difficulty = 18
+
+# How long a challenge stays valid after issue (seconds).
+challenge_ttl_seconds = 300
+
+# Minimum seconds between page load and claim submit. Bots usually submit
+# instantly; humans take at least a second or two to read.
+min_time_on_page_seconds = 2
+
+
+[wallets]
+# Order matters. The list is displayed in this sequence in the UI.
+# `logo` is relative to web/src/assets/wallets/ during dev; the build pipeline
+# copies these into the final dist. For a logo not in the repo, use a remote
+# URL (must be allowed by your CSP) or drop the file into the assets folder.
+
+[[wallets.list]]
+name = "BuhoGO"
+tagline = "Self-custodial Lightning"
+logo = "buhogo.svg"
+url = "https://home.mybuho.de/buhogo"
+
+[[wallets.list]]
+name = "Blink"
+tagline = "Easy on/off-ramp, custodial"
+logo = "blink.png"
+url = "https://blink.sv"
+
+[[wallets.list]]
+name = "Phoenix"
+tagline = "Self-custodial, mobile-first"
+logo = "phoenix.png"
+url = "https://phoenix.acinq.co"
+
+[[wallets.list]]
+name = "Wallet of Satoshi"
+tagline = "Beginner-friendly Self-Custody"
+logo = ""   # drop wos.png into web/src/assets/wallets/ to use it
+url = "https://www.walletofsatoshi.com"
+
+[[wallets.list]]
+name = "Alby"
+tagline = "Fast & Simple Lighting Wallet with NWC"
+logo = "alby.png"
+url = "https://getalby.com/alby-go"

@@ -1,0 +1,26 @@
+{
+  "name": "value4value-web",
+  "version": "0.1.0",
+  "description": "Frontend (Vue 3 + Tailwind) and embed widget (vanilla JS) for value4value sats faucet",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:embed": "vite build --config vite.embed.config.js --watch",
+    "build": "vite build && vite build --config vite.embed.config.js",
+    "build:landing": "vite build",
+    "build:embed": "vite build --config vite.embed.config.js",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "terser": "^5.36.0",
+    "vite": "^5.4.0"
+  }
+}

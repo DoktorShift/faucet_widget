@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-bg text-ink min-h-screen;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  /* Match the host site's section divider: a crisp short orange rule,
+     centered. Override max-width inline if needed. */
+  hr.divider {
+    @apply border-0 h-px bg-accent my-4 mx-auto;
+    max-width: 9rem;
+  }
+}
+
+@layer components {
+  .v4v-btn {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-card px-6 py-3 font-medium tracking-wide
+           transition-all duration-150
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  /* No glow on idle — 21m.art uses flat orange pills. Subtle press feedback. */
+  .v4v-btn-primary {
+    @apply v4v-btn bg-accent text-bg hover:bg-accent-hover active:translate-y-px;
+  }
+  .v4v-btn-ghost {
+    @apply v4v-btn bg-transparent text-ink-soft hover:text-ink
+           ring-1 ring-line hover:ring-accent/40;
+  }
+  .v4v-card {
+    @apply bg-bg-soft/40 rounded-card p-5 sm:p-6;
+  }
+  .v4v-headline {
+    @apply font-light tracking-headline text-accent;
+  }
+  /* Eyebrow now matches 21m.art — orange caps, not gray. */
+  .v4v-eyebrow {
+    @apply uppercase tracking-headline text-[0.7rem] text-accent/90 font-medium;
+  }
+}
+
+/* Hero bill-strip — CSS-only evocation of a 21-bitcoin dollar bill banner.
+   Mimics EU-banknote teal/sand stripes with a Bitcoin-orange disc, fading
+   into the page background. Faster to ship than commissioning a real image. */
+.bill-strip {
+  height: 84px;
+  background:
+    linear-gradient(180deg, transparent 70%, theme('colors.bg.DEFAULT') 100%),
+    repeating-linear-gradient(115deg,
+      #1a3a4a 0 22px,
+      #244a5a 22px 44px,
+      #c9a861 44px 52px,
+      #244a5a 52px 74px),
+    #1a3a4a;
+  border-bottom: 1px solid rgba(247, 147, 26, 0.5);
+  position: relative;
+}
+.bill-strip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 22% 50%,
+    rgba(247, 147, 26, 0.55) 0 14px,
+    transparent 18px);
+}
+
+/* Honeypot — visually hidden but stays focusable so it looks real to bots */
+.v4v-hp {
+  position: absolute !important;
+  left: -10000px !important;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+/* QR sizing — qrcode lib emits an inline SVG without width attr */
+.v4v-qr svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: white;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}

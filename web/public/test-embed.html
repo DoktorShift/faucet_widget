@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Test: Embed wie auf 21m.art</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1f1f1f;
+      color: #fff;
+      line-height: 1.6;
+    }
+    .stripe {
+      background: linear-gradient(135deg, #2a2a2a 0%, #1f1f1f 60%);
+      padding: 5rem 1.5rem 4rem;
+      text-align: center;
+      border-bottom: 1px solid rgba(247,147,26,.3);
+    }
+    .eyebrow {
+      color: #f7931a;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      font-size: .75rem;
+      margin-bottom: 1rem;
+      font-weight: 500;
+    }
+    h1 {
+      color: #f7931a;
+      font-weight: 300;
+      font-size: clamp(2rem, 6vw, 3.5rem);
+      letter-spacing: .04em;
+      margin: 0 0 1rem;
+    }
+    .lead { color: #d0d0d0; max-width: 540px; margin: 0 auto 2rem; font-size: 1.05rem; }
+    .container { max-width: 720px; margin: 0 auto; padding: 3rem 1.5rem; }
+    .container h2 {
+      color: #f7931a; font-weight: 300; letter-spacing: .04em;
+      text-align: center; font-size: 1.6rem; margin: 0 0 1rem;
+    }
+    .container p { color: #d0d0d0; }
+    .divider {
+      border: 0; height: 1px;
+      background: #f7931a;
+      max-width: 9rem; margin: 1.5rem auto;
+    }
+    .actions {
+      display: flex; flex-wrap: wrap; gap: 1rem;
+      justify-content: center; margin: 2rem 0;
+    }
+
+    .v4v-button {
+      display: inline-flex; align-items: center; gap: .5rem;
+      background: #f7931a; color: #1f1f1f;
+      border: 0; cursor: pointer;
+      padding: .85rem 1.6rem; border-radius: 8px;
+      font-weight: 500; font-size: 1rem; letter-spacing: .03em;
+      text-decoration: none;
+      transition: transform 80ms, background-color 150ms;
+    }
+    .v4v-button:hover { background: #ffa940; }
+    .v4v-button:active { transform: translateY(1px); }
+
+    .v4v-link {
+      background: transparent; color: #d0d0d0;
+      box-shadow: inset 0 0 0 1px #3a3a3a;
+    }
+    .v4v-link:hover { color: #fff; box-shadow: inset 0 0 0 1px rgba(247,147,26,.6); }
+
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #2a2a2a; color: #ffd28a;
+      padding: .1em .35em; border-radius: 4px; font-size: .9em;
+    }
+    .test-note {
+      background: rgba(247,147,26,.08);
+      border-left: 3px solid #f7931a;
+      padding: 1rem 1.25rem; border-radius: 4px;
+      margin: 1.5rem 0;
+    }
+    .test-note strong { color: #f7931a; }
+    footer {
+      text-align: center; padding: 2rem;
+      color: #9a9a9a; font-size: .8rem;
+      border-top: 1px solid rgba(255,255,255,.05);
+    }
+  </style>
+</head>
+<body>
+
+  <section class="stripe">
+    <p class="eyebrow">Test page · simulating 21m.art</p>
+    <h1>Congratulations!</h1>
+    <p class="lead">
+      You have discovered a 21-bitcoin dollar bill. This page mimics how the
+      embed button will look and behave on the real homepage.
+    </p>
+  </section>
+
+  <main class="container">
+
+    <h2>Option A · Embed (data-attr)</h2>
+    <p>Standard. Click and a modal opens in place. Same as the snippet you'd
+       paste into a WordPress Custom HTML block.</p>
+    <div class="actions">
+      <button class="v4v-button" data-v4v-claim>
+        <span>⚡</span> Hol dir 21 sats
+      </button>
+    </div>
+
+    <hr class="divider" />
+
+    <h2>Option A2 · Embed (class selector)</h2>
+    <p>Same modal flow but bound via <code>.v4v-claim</code> class. Survives
+       even when WordPress strips <code>data-*</code> attributes.</p>
+    <div class="actions">
+      <button class="v4v-button v4v-claim">
+        <span>⚡</span> Hol dir 21 sats (class)
+      </button>
+    </div>
+
+    <hr class="divider" />
+
+    <h2>Option C · Plain link (no JS)</h2>
+    <p>Navigates to the value4value landing page. Always works regardless of
+       theme or security plugin.</p>
+    <div class="actions">
+      <a class="v4v-button v4v-link" href="/">
+        <span>⚡</span> Open landing page
+      </a>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="test-note">
+      <strong>What to verify:</strong>
+      <ul>
+        <li>Both buttons (data-attr + class) open the same modal</li>
+        <li>Modal renders centered, dark with orange accent, NOT affected by this page's CSS</li>
+        <li>"Einen Moment…" / loading text appears briefly</li>
+        <li>QR code shows up, "Wallet öffnen" launches <code>lightning:</code> URI</li>
+        <li>"Code kopieren" works. Paste into <a href="https://demo.lnbits.com" style="color:#f7931a">demo.lnbits.com</a> to verify it's a real link</li>
+        <li>ESC closes the modal, click outside also closes</li>
+        <li>Click "Neuen Code holen". CTA resets correctly.</li>
+      </ul>
+    </div>
+
+  </main>
+
+  <footer>
+    Test rig · value4value embed against demo.lnbits.com
+  </footer>
+
+  <script src="/embed.js" defer></script>
+</body>
+</html>

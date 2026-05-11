@@ -1,0 +1,31 @@
+# docker-compose for Proxmox / single-host deploy.
+# The container exposes :8000 — front it with Cloudflared, Caddy, or nginx.
+
+services:
+  value4value:
+    build: .
+    image: value4value:latest
+    container_name: value4value
+    restart: unless-stopped
+
+    # Mount real config and persistent SQLite data
+    volumes:
+      - ./config.toml:/app/config.toml:ro
+      - ./data:/app/data
+
+    environment:
+      V4V_CONFIG: /app/config.toml
+
+    ports:
+      # Bind to localhost ONLY — Cloudflared / your reverse proxy is the
+      # public face. DO NOT change to "8000:8000" or "0.0.0.0:8000:8000":
+      # the service trusts `CF-Connecting-IP` and `X-Forwarded-For` headers,
+      # and exposing it directly would let attackers spoof the source IP and
+      # bypass the rate limiter.
+      - "127.0.0.1:8000:8000"
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

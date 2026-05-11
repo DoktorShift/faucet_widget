@@ -1,0 +1,109 @@
+# =====================================================================
+# value4value · .gitignore
+# Keep secrets out, keep the repo clean, keep the build reproducible.
+# =====================================================================
+
+# --- Secrets (NEVER commit these) ----------------------------------
+config.toml
+config.*.local.toml
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+
+# --- Python --------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+.Python
+.installed.cfg
+build/
+develop-eggs/
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# --- Node / npm / pnpm / yarn --------------------------------------
+node_modules/
+.npm
+.pnpm-store/
+.yarn/
+.yarnrc.yml
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.parcel-cache/
+
+# --- Vite / build output -------------------------------------------
+dist/
+web/dist/
+.vite/
+*.tsbuildinfo
+
+# --- Runtime / persistence -----------------------------------------
+# The data/ directory itself is kept (see data/.gitkeep) so a fresh
+# clone has the volume-mount target ready. Only its contents are ignored.
+data/*
+!data/.gitkeep
+*.log
+logs/
+
+# --- macOS ---------------------------------------------------------
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+
+# --- Windows -------------------------------------------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Linux ---------------------------------------------------------
+*~
+.directory
+
+# --- Editors / IDEs ------------------------------------------------
+.vscode/
+.idea/
+*.iml
+*.suo
+*.user
+*.swp
+*.swo
+.project
+.settings/
+.classpath
+*.sublime-workspace
+*.sublime-project
+nbproject/
+
+# --- Cloudflared local credentials ---------------------------------
+.cloudflared/
+*.cloudflared.yml
+
+# --- Backups / temp ------------------------------------------------
+*.bak
+*.orig
+*.tmp
+*.swap

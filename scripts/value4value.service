@@ -1,0 +1,37 @@
+[Unit]
+Description=value4value Lightning sats faucet
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=v4v
+Group=v4v
+WorkingDirectory=/opt/value4value
+Environment=V4V_CONFIG=/opt/value4value/config.toml
+ExecStart=/opt/value4value/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 \
+    --no-server-header --no-date-header \
+    --proxy-headers --forwarded-allow-ips=*
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/value4value/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
