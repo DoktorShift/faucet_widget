@@ -1,4 +1,4 @@
-# value4value
+# Web Faucet
 
 A self-hosted Lightning sats faucet.
 Onboard visitors of a website by gifting them Bitcoin (sats) to their own wallet.
