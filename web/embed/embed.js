@@ -331,9 +331,31 @@
     const lang = FORCED_LANG || cfg.default_lang || 'de'
     const amount = cfg.amount_sats
 
-    const startedAt = Math.floor(Date.now() / 1000)
     let copied = false
     let claim = null
+
+    // Anti-bot uses the challenge's signed `issued_at` to gauge how long the
+    // user has been on the widget. Pre-fetch it as the modal opens so that
+    // timestamp matches the user's actual arrival — not the click moment.
+    // Refresh if it's about to expire when the user finally clicks claim.
+    const CHALLENGE_RENEWAL_GRACE_SECONDS = 30
+    let challenge = null
+
+    function challengeFresh() {
+      if (!challenge) return false
+      const now = Math.floor(Date.now() / 1000)
+      return now <= challenge.expires_at - CHALLENGE_RENEWAL_GRACE_SECONDS
+    }
+
+    async function ensureChallenge() {
+      if (challengeFresh()) return challenge
+      challenge = await fetchChallenge()
+      return challenge
+    }
+
+    // Fire and forget — errors surface on the next user action via
+    // ensureChallenge(). Avoids an unhandled promise rejection at idle.
+    ensureChallenge().catch(() => {})
 
     // Build DOM
     const body = el('div', { class: 'body' })
@@ -354,19 +376,22 @@
       cta.textContent = `⚡ ${t(lang, 'working')}`
 
       try {
-        const ch = await fetchChallenge()
+        const ch = await ensureChallenge()
         const solution = await solvePow(ch.token, ch.difficulty, (p) => {
           cta.textContent = `⚡ ${t(lang, 'solving', { progress: Math.round(p * 100) })}`
         })
         claim = await submitClaim({
           token: ch.token,
           solution,
-          started_at: startedAt,
           hp: honeypot.value,
         })
+        // Token is single-use server-side; clear so "again" pulls a fresh one.
+        challenge = null
         renderDone()
       } catch (e) {
         showError(errorKey(e.status, e.detail || e.message))
+        // Same reasoning — assume the token was consumed or invalidated.
+        challenge = null
         cta.disabled = false
         cta.textContent = `⚡ ${t(lang, 'cta', { amount })}`
       }
@@ -418,7 +443,13 @@
       body.appendChild(copyStatus)
 
       const again = el('button', { class: 'again' }, t(lang, 'again'))
-      again.onclick = () => { claim = null; cta.disabled = false; renderIdle() }
+      again.onclick = () => {
+        claim = null
+        cta.disabled = false
+        renderIdle()
+        // Prime a fresh challenge so the next click doesn't have to wait.
+        ensureChallenge().catch(() => {})
+      }
       body.appendChild(again)
     }
 

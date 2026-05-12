@@ -47,38 +47,36 @@ export async function fetchChallenge() {
 }
 
 /**
- * Full claim flow.
+ * Submit a solved claim.
  *
  * @param {object} args
- * @param {string} args.token        - challenge token
- * @param {string} args.solution     - PoW solution
- * @param {number} args.startedAt    - seconds unix-ts when page rendered
- * @param {string} args.hp           - honeypot (always empty for humans)
+ * @param {string} args.token     - challenge token from fetchChallenge()
+ * @param {string} args.solution  - PoW solution string
+ * @param {string} [args.hp]      - honeypot value (always empty for humans)
  */
-export async function submitClaim({ token, solution, startedAt, hp }) {
+export async function submitClaim({ token, solution, hp }) {
   const resp = await fetch(`${BASE}/api/claim`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ token, solution, started_at: startedAt, hp: hp ?? '' }),
+    body: JSON.stringify({ token, solution, hp: hp ?? '' }),
   })
   return jsonOrThrow(resp)
 }
 
 /**
- * One-shot helper: gets challenge, solves PoW, submits claim. Returns the
- * claim response.
+ * Solve a pre-fetched challenge and submit it.
  *
- * @param {(p:number)=>void} onProgress - 0..1 PoW progress
- * @param {number} startedAt - seconds unix-ts; pass the value captured at page load
- * @param {string} hp - honeypot value (the bound input)
+ * The challenge MUST have been fetched at page load (not on submit) so the
+ * server's time-on-page check sees a realistic elapsed time. Callers are
+ * also responsible for refreshing the challenge when it is close to its
+ * server-side expiry.
+ *
+ * @param {object} args
+ * @param {object} args.challenge        - the object returned by fetchChallenge()
+ * @param {(p:number)=>void} [args.onProgress] - 0..1 PoW progress callback
+ * @param {string} [args.hp]             - honeypot value
  */
-export async function runFullClaim({ onProgress, startedAt, hp }) {
-  const ch = await fetchChallenge()
-  const solution = await solvePow(ch.token, ch.difficulty, onProgress)
-  return submitClaim({
-    token: ch.token,
-    solution,
-    startedAt,
-    hp,
-  })
+export async function runFullClaim({ challenge, onProgress, hp }) {
+  const solution = await solvePow(challenge.token, challenge.difficulty, onProgress)
+  return submitClaim({ token: challenge.token, solution, hp })
 }

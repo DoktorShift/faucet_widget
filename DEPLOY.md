@@ -39,6 +39,15 @@ are happy to give away. The admin key has full rights over the wallet's funds.
 
 ## 2. Run as a container (recommended)
 
+One-time host prep. Creates `./data` with the right ownership, copies
+the config file, generates an HMAC secret:
+
+```sh
+./scripts/setup.sh
+```
+
+Then build and run:
+
 ```sh
 docker build -t value4value .
 
@@ -49,9 +58,14 @@ docker run -d --name value4value --restart unless-stopped \
   value4value
 ```
 
-Important: bind to `127.0.0.1`, never `0.0.0.0`. The app trusts the
-`CF-Connecting-IP` and `X-Forwarded-For` headers; exposing the port directly
-lets attackers spoof IPs and bypass the rate limiter.
+If the container restarts with `sqlite3.OperationalError: unable to open
+database file`, you skipped `setup.sh` and `./data` is owned by root.
+The container's entrypoint prints the exact remediation; otherwise see
+[TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+For the `-p 127.0.0.1:8000:8000` binding choice see §4 below. `127.0.0.1`
+is right for single-host setups; multi-host needs a LAN-IP or shared
+Docker network.
 
 ## 3. Run without Docker
 
@@ -67,26 +81,98 @@ uvicorn app.main:app \
 
 `systemd` unit example: see [`scripts/value4value.service`](scripts/value4value.service).
 
-## 4. Front with Cloudflared
+## 4. Deployment topologies
 
+Three patterns, pick the one matching where Cloudflared (or your proxy) lives.
+They differ only in **what host:port the container binds to** and how the
+tunnel reaches it.
+
+### A. Single host (all on the same machine)
+
+```
+   ┌─ host ───────────────────────────┐
+   │  cloudflared  →  widget :8000    │
+   └──────────────────────────────────┘
+```
+
+`docker-compose.yml`:
 ```yaml
-# /etc/cloudflared/config.yml
+    ports:
+      - "127.0.0.1:8000:8000"   # strict; nothing on the LAN can reach it
+```
+
+Cloudflared (`/etc/cloudflared/config.yml`):
+```yaml
 tunnel: <YOUR-TUNNEL-UUID>
 credentials-file: /etc/cloudflared/<UUID>.json
-
 ingress:
   - hostname: value4value.eu
     service: http://127.0.0.1:8000
   - service: http_status:404
 ```
 
-```sh
-sudo cloudflared service install
-sudo systemctl restart cloudflared
+### B. Tunnel in a separate container / LXC
+
+```
+   ┌─ lxc A ─────────┐    ┌─ lxc B ──────────────┐
+   │  cloudflared    │ →  │  widget @ LAN-IP     │
+   └─────────────────┘    │  :8000               │
+                          └──────────────────────┘
 ```
 
-DNS for `value4value.eu` should be a CNAME to `<UUID>.cfargotunnel.com`
-(Cloudflared sets this up if you use `cloudflared tunnel route dns`).
+`docker-compose.yml` (on the widget host):
+```yaml
+    ports:
+      - "192.168.x.y:8000:8000"   # the widget host's LAN IP
+```
+
+Cloudflared (on the other host):
+```yaml
+ingress:
+  - hostname: value4value.eu
+    service: http://192.168.x.y:8000
+```
+
+Trust model: anything on your LAN can reach :8000. Make sure your LAN
+firewall blocks external access. The service still rate-limits correctly
+because Cloudflared sets `CF-Connecting-IP`.
+
+### C. Both in the same Docker network
+
+```
+   ┌─ docker host ───────────────────────┐
+   │  cloudflared  →  widget             │
+   │       (shared docker network)       │
+   └─────────────────────────────────────┘
+```
+
+`docker-compose.yml`:
+```yaml
+services:
+  value4value:
+    expose: ["8000"]              # NOT ports; internal only
+    networks: [v4v]
+  cloudflared:
+    image: cloudflare/cloudflared
+    command: tunnel --no-autoupdate run --token <token>
+    networks: [v4v]
+    # tunnel ingress points to:  http://value4value:8000
+
+networks:
+  v4v:
+```
+
+Cleanest if both are managed by the same compose file. No host-port
+exposure, no IP guessing.
+
+### DNS
+
+Whichever pattern you pick, the public domain (e.g. `value4value.eu`) should
+be a CNAME to `<TUNNEL-UUID>.cfargotunnel.com`. The easiest way:
+
+```sh
+cloudflared tunnel route dns <YOUR-TUNNEL-UUID> value4value.eu
+```
 
 ## 5. Persistence
 

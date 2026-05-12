@@ -6,16 +6,20 @@ instant-submit bots (min time on page). All stateless on the server — the
 challenge itself carries everything we need to verify it.
 
 Flow:
-1. Client GETs /api/challenge.
+1. Client GETs /api/challenge on page load. The server stamps `issued_at`
+   into the signed token; that timestamp is the canonical "user arrived"
+   moment used by the time-on-page check.
 2. Server creates a challenge: { nonce, difficulty, issued_at, exp }, signs
    it with HMAC-SHA256, returns it as a token.
 3. Client solves the PoW: find `solution` such that
    sha256(token + ":" + solution) starts with `difficulty` zero bits.
-4. Client POSTs /api/claim with { token, solution, hp, started_at }.
-5. Server: re-verifies HMAC → checks expiry → checks PoW → checks honeypot
-   is empty → checks time-on-page >= min.
+4. Client POSTs /api/claim with { token, solution, hp }.
+5. Server re-verifies HMAC → checks expiry → checks honeypot is empty
+   → checks (now - issued_at) >= min_time_on_page → checks PoW.
 
 The signature prevents tampering. The HMAC secret never leaves the server.
+Timing is server-authoritative on purpose: a client-supplied "started_at"
+would be brittle against clock skew and trivially spoofable.
 
 This is a deliberately small, dependency-free implementation. ~150 lines, no
 external lib, easy to audit.
@@ -102,7 +106,6 @@ class Antibot:
         token: str,
         solution: str,
         honeypot: str,
-        started_at: int,
     ) -> VerifiedChallenge:
         """Validate a claim submission.
 
@@ -111,6 +114,11 @@ class Antibot:
 
         Run checks in a deterministic order so legit clients get helpful
         messages while bots learn as little as possible.
+
+        Time-on-page is measured against the server-signed `issued_at` baked
+        into the token. This means the frontend must fetch the challenge on
+        page load (not on submit) for `min_time_on_page_seconds` to mean
+        what its name says.
         """
         # 1) Honeypot: any non-empty value means it's a bot.
         if honeypot:
@@ -132,15 +140,12 @@ class Antibot:
             log.info("antibot reject: token expired (%ds ago)", now - exp)
             raise AntibotError("Challenge expired. Please try again.")
 
-        # 4) Time-on-page — required, so bots can't bypass by omitting.
-        elapsed = now - started_at
+        # 4) Time-on-page — server-clock vs server-stamped issued_at, so
+        #    client clock skew can't push a submission past this check.
+        elapsed = now - issued_at
         if elapsed < self._cfg.min_time_on_page_seconds:
             log.info("antibot reject: too fast (%ds)", elapsed)
             raise AntibotError("Slow down — please wait a moment.")
-        # Sanity bound: started_at must be at-or-after issued_at (allow 5s skew).
-        if started_at < issued_at - 5:
-            log.info("antibot reject: started_at < issued_at")
-            raise AntibotError("Invalid submission.")
 
         # 5) Proof-of-work.
         if not self._check_pow(token, solution, difficulty):

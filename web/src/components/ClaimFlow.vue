@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { runFullClaim } from '@/composables/useApi.js'
+import { ref, computed, onMounted } from 'vue'
+import { fetchChallenge, runFullClaim } from '@/composables/useApi.js'
 import { useI18n } from '@/i18n.js'
 
 const props = defineProps({
@@ -10,31 +10,42 @@ const props = defineProps({
 const { t, lang } = useI18n()
 
 const STATES = Object.freeze({
+  LOADING: 'loading',   // pre-fetching the challenge right after mount
   IDLE: 'idle',
   WORKING: 'working',
   DONE: 'done',
   ERROR: 'error',
 })
 
-const state = ref(STATES.IDLE)
+// Refresh the challenge if it has less than this much TTL left when the
+// user clicks, so a slow PoW solve can't race the server-side expiry.
+const CHALLENGE_RENEWAL_GRACE_SECONDS = 30
+
+const state = ref(STATES.LOADING)
 const progress = ref(0)
 const claim = ref(null)   // { lnurl, lightning_uri, qr_svg, amount_sats }
 const errorKey = ref(null)
 const copied = ref(false)
 const honeypot = ref('')
 
-// Captured once at component mount — the verifier compares this to the
-// server clock at submit time.
-const startedAt = Math.floor(Date.now() / 1000)
+// Pre-fetched at mount so the server-stamped `issued_at` anchors to the
+// user's actual arrival on the page — the anti-bot uses it to measure
+// time-on-page. Null while the request is in flight or after a failure.
+const challenge = ref(null)
 
 const ctaLabel = computed(() => {
-  if (state.value === STATES.WORKING) {
-    return progress.value > 0
-      ? t('step2.solving', { progress: Math.round(progress.value * 100) })
-      : t('step2.working')
+  if (state.value === STATES.WORKING && progress.value > 0) {
+    return t('step2.solving', { progress: Math.round(progress.value * 100) })
+  }
+  if (state.value === STATES.LOADING || state.value === STATES.WORKING) {
+    return t('step2.working')
   }
   return t('step2.cta', { amount: props.amount })
 })
+
+const isBusy = computed(
+  () => state.value === STATES.LOADING || state.value === STATES.WORKING,
+)
 
 function errorKeyFromError(err) {
   const detail = (err.detail || err.message || '').toString()
@@ -53,23 +64,58 @@ function errorKeyFromError(err) {
   return 'error.generic'
 }
 
+async function loadChallenge() {
+  state.value = STATES.LOADING
+  errorKey.value = null
+  try {
+    challenge.value = await fetchChallenge()
+    state.value = STATES.IDLE
+  } catch (e) {
+    challenge.value = null
+    errorKey.value = errorKeyFromError(e)
+    state.value = STATES.ERROR
+  }
+}
+
+onMounted(loadChallenge)
+
+function challengeNeedsRefresh() {
+  if (!challenge.value) return true
+  const now = Math.floor(Date.now() / 1000)
+  return now > challenge.value.expires_at - CHALLENGE_RENEWAL_GRACE_SECONDS
+}
+
 async function onClaim() {
-  if (state.value === STATES.WORKING) return
-  state.value = STATES.WORKING
-  progress.value = 0
+  if (isBusy.value) return
   errorKey.value = null
 
+  // Pull a fresh challenge if ours is missing or close to expiry. Users who
+  // linger on the page long enough to outlast the TTL end up here.
+  if (challengeNeedsRefresh()) {
+    try {
+      challenge.value = await fetchChallenge()
+    } catch (e) {
+      errorKey.value = errorKeyFromError(e)
+      state.value = STATES.ERROR
+      return
+    }
+  }
+
+  state.value = STATES.WORKING
+  progress.value = 0
   try {
-    const result = await runFullClaim({
+    claim.value = await runFullClaim({
+      challenge: challenge.value,
       onProgress: (p) => (progress.value = p),
-      startedAt,
       hp: honeypot.value,
     })
-    claim.value = result
+    // Token is single-use on the server; drop it so a retry can't replay.
+    challenge.value = null
     state.value = STATES.DONE
   } catch (e) {
     errorKey.value = errorKeyFromError(e)
     state.value = STATES.ERROR
+    challenge.value = null
   }
 }
 
@@ -90,11 +136,12 @@ async function copyLnurl() {
   }
 }
 
-function reset() {
-  state.value = STATES.IDLE
+async function reset() {
   claim.value = null
-  errorKey.value = null
   progress.value = 0
+  // The token was consumed by the previous claim — pull a fresh one before
+  // letting the user try again, so the new submit has a valid challenge.
+  await loadChallenge()
 }
 </script>
 
@@ -117,7 +164,7 @@ function reset() {
       <button
         type="button"
         class="v4v-btn-primary w-full text-base sm:text-lg px-4 sm:px-6 py-4"
-        :disabled="state === STATES.WORKING"
+        :disabled="isBusy"
         @click="onClaim"
       >
         <svg viewBox="0 0 24 24" class="size-5" fill="currentColor" aria-hidden="true">

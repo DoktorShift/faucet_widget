@@ -2,7 +2,7 @@
 # Copy to `config.toml` and adjust. Never commit `config.toml` (it has secrets).
 
 [app]
-# Public base URL of this service.
+# Public base URL of this service. Used in QR/LNURL generation.
 base_url = "https://value4value.eu"
 
 # Bind address + port for the FastAPI server.
@@ -48,7 +48,7 @@ amount_sats = 21
 daily_cap = 100
 
 # Per-IP cooldown in hours. 24 = one claim per IP per day.
-ip_cooldown_hours = 25
+ip_cooldown_hours = 24
 
 # How long the generated LNURL stays valid (seconds). Default 1h.
 link_expiry_seconds = 3600

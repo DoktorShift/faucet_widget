@@ -62,9 +62,6 @@ class ChallengeResponse(BaseModel):
 class ClaimRequest(BaseModel):
     token: str
     solution: str
-    started_at: int = Field(
-        description="Client unix-seconds timestamp when the page first rendered",
-    )
     # Honeypot field — must remain empty. Real clients leave it untouched;
     # bots that auto-fill form inputs will fill it.
     hp: str = ""
@@ -130,7 +127,6 @@ async def claim(
             token=body.token,
             solution=body.solution,
             honeypot=body.hp,
-            started_at=body.started_at,
         )
     except AntibotError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

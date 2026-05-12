@@ -35,8 +35,9 @@ Need a random secret (HMAC)? `python3 -c "import secrets; print(secrets.token_he
 
 ## Read next
 
-* [DEPLOY.md](DEPLOY.md): how to ship it (Docker, Cloudflared, persistence)
+* [DEPLOY.md](DEPLOY.md): how to ship it (Docker, Cloudflared, three topologies)
 * [WORDPRESS.md](WORDPRESS.md): three copy-paste integrations for WP
+* [TROUBLESHOOTING.md](TROUBLESHOOTING.md): common deploy gotchas with one-line fixes
 * [config.toml.example](config.toml.example): every knob, documented
 
 ## License

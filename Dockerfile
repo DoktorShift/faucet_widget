@@ -32,6 +32,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY app/ ./app/
 COPY --from=web-build /build/dist ./dist
 
+# Preflight entrypoint catches the two common deploy failures (data perms,
+# missing config) and prints a one-line remediation. See the script.
+COPY --chmod=755 scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
 # Runtime data lives in a volume
 RUN mkdir -p /app/data && chown -R v4v:v4v /app
 VOLUME ["/app/data"]
@@ -42,10 +46,13 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# The HEALTHCHECK polls /api/health; the endpoint returns 503 (== unhealthy
+# to docker) when LNbits is unreachable, 200 otherwise (including low_pot).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request, sys; \
         sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=2).status == 200 else 1)"
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", \
      "--host", "0.0.0.0", "--port", "8000", \
      "--proxy-headers", "--forwarded-allow-ips=*", \
